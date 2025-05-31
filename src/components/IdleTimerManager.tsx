@@ -1,89 +1,90 @@
-import React, { useCallback, useState } from 'react';
-import { useCustomIdleTimer } from '../hooks/useIdleTimer';
-import { useIdleTimerContext } from '../context/UseIdleTimerContext';
-import LogoutWarningModal from './LogoutWarningModal';
+import React, { useCallback, useEffect } from 'react';
+import { useIdleTimer as useReactIdleTimer } from 'react-idle-timer';
+import { useLocation } from 'react-router-dom';
+import { IdleState } from '../types/idle-timer.types';
 
-const IdleTimerManager: React.FC = () => {
-  const [showWarning, setShowWarning] = useState<boolean>(false);
-  const { getActiveComponentCallbacks } = useIdleTimerContext();
+interface IdleTimerManagerProps {
+  onStateChange: (state: IdleState, timeRemaining: number) => void;
+  onControlFunctionsReady: (reset: () => void, pause: () => void, resume: () => void) => void;
+}
 
-  const handlePreLogout = useCallback(async (): Promise<void> => {
-    const callbacks = getActiveComponentCallbacks();
+const IdleTimerManager: React.FC<IdleTimerManagerProps> = ({ 
+  onStateChange, 
+  onControlFunctionsReady 
+}) => {
+  const location = useLocation();
+  const timeout = 15 * 60 * 1000; // 15 minutes
+  const warningTime = 5 * 60 * 1000; // 5 minutes before timeout
 
-    // Execute component-specific pre-logout activities
-    if (callbacks?.onPreLogout) {
-      try {
-        await callbacks.onPreLogout();
-      } catch (error) {
-        console.error('Pre-logout activity failed:', error);
+  const handleOnPresenceChange = useCallback((presence: any) => {
+    const remaining = presence.timeRemaining;
+    
+    if (presence.type === 'active') {
+      onStateChange(IdleState.ACTIVE, remaining);
+    } else if (presence.type === 'idle') {
+      if (remaining <= warningTime && remaining > 0) {
+        onStateChange(IdleState.WARNING, remaining);
       }
     }
+  }, [onStateChange, warningTime]);
 
-    // Show warning modal
-    setShowWarning(true);
-  }, [getActiveComponentCallbacks]);
-
-  const handleLogout = useCallback(async (): Promise<void> => {
-    const callbacks = getActiveComponentCallbacks();
-
-    // Execute component-specific logout activities (save data)
-    if (callbacks?.onLogout) {
-      try {
-        await callbacks.onLogout();
-      } catch (error) {
-        console.error('Component logout activity failed:', error);
-      }
-    }
-
-    // Perform global logout activities
-    try {
-      // Save any remaining global data
-      //   await saveGlobalUserData();
-      console.log('Global logout activities executed');
-
+  const handleOnIdle = useCallback(() => {
+    onStateChange(IdleState.IDLE, 0);
+    
+    // Perform logout
+    setTimeout(() => {
       // Clear session
-      //   clearUserSession();
-      console.log('User session cleared');
-
+      localStorage.removeItem('authToken');
+      sessionStorage.clear();
+      
       // Redirect to login
       window.location.href = '/login';
-    } catch (error) {
-      console.error('Global logout failed:', error);
-      // Force logout even if save fails
-      //   clearUserSession();
-      console.log('User session cleared');
-      window.location.href = '/login';
-    }
-  }, [getActiveComponentCallbacks]);
+    }, 100);
+  }, [onStateChange]);
 
-  const { timeRemaining, reset } = useCustomIdleTimer({
-    onPreLogout: handlePreLogout,
-    onLogout: handleLogout,
-    timeout: 15 * 60 * 1000, // 15 minutes
-    promptTimeout: 5 * 60 * 1000 // 5 minutes
+  const idleTimer = useReactIdleTimer({
+    onIdle: handleOnIdle,
+    onPresenceChange: handleOnPresenceChange,
+    timeout,
+    throttle: 500,
+    events: [
+      'mousedown',
+      'mousemove',
+      'keypress',
+      'scroll',
+      'touchstart',
+      'click'
+    ]
   });
 
-  const handleContinueSession = (): void => {
-    setShowWarning(false);
-    reset();
-  };
+  // Provide control functions to context
+  useEffect(() => {
+    onControlFunctionsReady(
+      idleTimer.reset,
+      idleTimer.pause,
+      idleTimer.resume
+    );
+  }, [idleTimer.reset, idleTimer.pause, idleTimer.resume, onControlFunctionsReady]);
 
-  const handleLogoutNow = (): void => {
-    setShowWarning(false);
-    handleLogout();
-  };
+  // Update time remaining periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const remaining = idleTimer.getRemainingTime();
+      const isIdle = idleTimer.isIdle();
+      
+      if (!isIdle) {
+        if (remaining <= warningTime && remaining > 0) {
+          onStateChange(IdleState.WARNING, remaining);
+        } else if (remaining > warningTime) {
+          onStateChange(IdleState.ACTIVE, remaining);
+        }
+      }
+    }, 1000);
 
-  return (
-    <>
-      {showWarning && (
-        <LogoutWarningModal
-          timeRemaining={timeRemaining}
-          onContinue={handleContinueSession}
-          onLogout={handleLogoutNow}
-        />
-      )}
-    </>
-  );
+    return () => clearInterval(interval);
+  }, [idleTimer, onStateChange, warningTime]);
+
+  return null;
 };
 
 export default IdleTimerManager;

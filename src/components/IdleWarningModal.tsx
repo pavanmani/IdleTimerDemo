@@ -1,33 +1,47 @@
 import React, { useEffect, useState } from 'react';
-import type { LogoutWarningModalProps } from '../types/idle-timer.types';
+import { useIdleTimer } from '../context/IdleTimerContext';
+import { IdleState } from '../types/idle-timer.types';
 
-const LogoutWarningModal: React.FC<LogoutWarningModalProps> = ({ 
-  timeRemaining, 
-  onContinue, 
-  onLogout 
-}) => {
-  const [countdown, setCountdown] = useState<number>(Math.floor(timeRemaining / 1000));
+const IdleWarningModal: React.FC = () => {
+  const { idleState, timeRemaining, reset } = useIdleTimer();
+  const [countdown, setCountdown] = useState<number>(0);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          onLogout();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    if (idleState === IdleState.WARNING) {
+      setCountdown(Math.floor(timeRemaining / 1000));
+    }
+  }, [idleState, timeRemaining]);
 
-    return () => clearInterval(interval);
-  }, [onLogout]);
+  useEffect(() => {
+    if (idleState === IdleState.WARNING && countdown > 0) {
+      const interval = setInterval(() => {
+        setCountdown(prev => Math.max(0, prev - 1));
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [idleState, countdown]);
+
+  const handleContinueSession = () => {
+    reset();
+  };
+
+  const handleLogoutNow = () => {
+    // Clear session and redirect
+    localStorage.removeItem('authToken');
+    sessionStorage.clear();
+    window.location.href = '/login';
+  };
 
   const formatTime = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
+
+  if (idleState !== IdleState.WARNING) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -41,13 +55,13 @@ const LogoutWarningModal: React.FC<LogoutWarningModalProps> = ({
         </p>
         <div className="flex gap-3 justify-end">
           <button
-            onClick={onLogout}
+            onClick={handleLogoutNow}
             className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
           >
             Logout Now
           </button>
           <button
-            onClick={onContinue}
+            onClick={handleContinueSession}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           >
             Continue Session
@@ -58,4 +72,4 @@ const LogoutWarningModal: React.FC<LogoutWarningModalProps> = ({
   );
 };
 
-export default LogoutWarningModal;
+export default IdleWarningModal;
