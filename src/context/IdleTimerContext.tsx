@@ -1,6 +1,9 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, type ReactNode } from 'react';
 import {type IdleTimerContextType, IdleState } from '../types/idle-timer.types';
 import IdleTimerManager from '../components/IdleTimerManager';
+interface IdleTimerProviderProps {
+  children: ReactNode;
+}
 
 const IdleTimerContext = createContext<IdleTimerContextType | undefined>(undefined);
 
@@ -11,10 +14,6 @@ export const useIdleTimer = (): IdleTimerContextType => {
   }
   return context;
 };
-
-interface IdleTimerProviderProps {
-  children: ReactNode;
-}
 
 export const IdleTimerProvider: React.FC<IdleTimerProviderProps> = ({ children }) => {
   const [idleState, setIdleState] = useState<IdleState>(IdleState.ACTIVE);
